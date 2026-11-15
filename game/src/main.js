@@ -10,7 +10,7 @@
 import { BEST_KEY, STEP } from './config.js';
 import { createRandom } from './random.js';
 import { applyUpgrade, createWorld, resetWorld, stepWorld } from './world.js';
-import { ACTION_CONFIRM, ACTION_MUTE, ACTION_PAUSE, ACTION_RESTART, createInput } from './input.js';
+import { ACTION_CONFIRM, ACTION_DASH, ACTION_MUTE, ACTION_PAUSE, ACTION_RESTART, createInput } from './input.js';
 import { createAudio } from './audio.js';
 import { createParticles } from './particles.js';
 import {
@@ -121,6 +121,19 @@ function handleEvents() {
       audio.explode(event.big);
     } else if (event.type === 'hit') {
       particles.sparks(event.x, event.y, event.color, 5);
+    } else if (event.type === 'dmg') {
+      // Damage numbers: crits shout in big gold, ordinary hits murmur.
+      if (event.crit) particles.floatText(event.x, event.y, `${event.amount}!`, '#ffd166', 1.5);
+      else particles.floatText(event.x, event.y, `${event.amount}`, '#e8e4ff', 0.8);
+    } else if (event.type === 'dash') {
+      audio.dash();
+    } else if (event.type === 'dashTrail') {
+      particles.sparks(event.x, event.y, '#4df3ff', 2);
+    } else if (event.type === 'snipe') {
+      audio.snipe();
+    } else if (event.type === 'fuseBlast') {
+      particles.ring(event.x, event.y, '#ff6b35', event.radius);
+      particles.explosion(event.x, event.y, '#ff6b35', true);
     } else if (event.type === 'pickup') {
       particles.pickupSparkle(event.x, event.y, event.color);
       audio.pickup();
@@ -180,8 +193,12 @@ function aimPoint() {
 function liveControl() {
   const axis = input.moveAxis();
   const aim = aimPoint();
-  return { mx: axis.x, my: axis.y, aimX: aim.x, aimY: aim.y, fire: true };
+  return { mx: axis.x, my: axis.y, aimX: aim.x, aimY: aim.y, fire: true, dash: false };
 }
+
+// A dash press is queued for the next world step, then spent: the world
+// reads it once, on the first step of the frame that carries it.
+let dashQueued = false;
 
 function startRun() {
   resetWorld(world);
@@ -246,8 +263,11 @@ function frame() {
     } else if (input.take(ACTION_MUTE)) {
       audio.toggleMute();
     } else {
+      if (input.take(ACTION_DASH)) dashQueued = true;
       const control = soak ? autopilot(world) : liveControl();
+      if (!soak) control.dash = dashQueued;
       stepAccumulated(control, dt, true);
+      dashQueued = false;
       handleEvents();
       if (world.over) {
         screen = SCREEN_OVER;
@@ -313,6 +333,22 @@ function frame() {
 function runShot(name) {
   const staged = stageShot(name, world, applyUpgrade);
   screen = staged.screen;
+  if (screen === SCREEN_PLAY) {
+    // The staging backlog holds thousands of stale events; drop it, run
+    // a breath of live play, and drain only those fresh events — so the
+    // frozen frame carries live hits, damage numbers and explosions
+    // instead of a museum still.
+    world.events.length = 0;
+    for (let i = 0; i < 18 && !world.over; i += 1) {
+      if (world.pendingLevelUps > 0 && world.choices.length > 0) {
+        applyUpgrade(world, world.choices[0]);
+      }
+      stepWorld(world, autopilot(world), STEP);
+    }
+    handleEvents();
+    particles.update(0.12);
+    if (world.over) screen = SCREEN_OVER;
+  }
   // Paint twice so glow and shadows settle, then signal readiness.
   let painted = 0;
   function paint() {
@@ -347,6 +383,6 @@ if (shot) {
   runShot(shot);
 } else {
   if (soak) screen = SCREEN_PLAY;
-  status.textContent = 'VOIDPULSE: WASD to move, mouse to aim, auto-fire on. P pauses, M mutes.';
+  status.textContent = 'VOIDPULSE: WASD to move, mouse to aim, SHIFT or right-click to dash. P pauses, M mutes.';
   requestAnimationFrame(frame);
 }

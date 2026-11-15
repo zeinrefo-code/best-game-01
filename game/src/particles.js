@@ -56,8 +56,8 @@ export function createParticles() {
         size: maxRadius, color, drag: 0, ring: true, startSize: 6,
       });
     },
-    floatText(x, y, text, color) {
-      texts.push({ x, y, text, color, life: 0.9, maxLife: 0.9 });
+    floatText(x, y, text, color, scale = 1) {
+      texts.push({ x, y, text, color, scale, life: 0.9, maxLife: 0.9 });
     },
     update(dt) {
       trauma = Math.max(0, trauma - dt * 1.6);
@@ -111,8 +111,11 @@ export function createParticles() {
       }
       ctx.globalAlpha = 1;
       ctx.textAlign = 'center';
-      ctx.font = 'bold 14px "Segoe UI", system-ui, sans-serif';
       for (const t of texts) {
+        // Damage numbers and announcements share one pool; the scale a
+        // text was floated with sets its size (crits shout, hits murmur).
+        const size = Math.max(9, Math.round(14 * (t.scale ?? 1)));
+        ctx.font = `bold ${size}px "Segoe UI", system-ui, sans-serif`;
         ctx.globalAlpha = Math.max(0, t.life / t.maxLife);
         ctx.fillStyle = t.color;
         ctx.fillText(t.text, t.x, t.y);

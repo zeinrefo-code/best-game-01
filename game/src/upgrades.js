@@ -1,4 +1,4 @@
-// The upgrade pool: twelve upgrades the level-up screen offers three of.
+// The upgrade pool: sixteen upgrades the level-up screen offers three of.
 // Each one mutates the player's stats in place and reports what changed so
 // the level-up screen can show it. `max` caps how often one can repeat.
 export const UPGRADES = [
@@ -62,6 +62,26 @@ export const UPGRADES = [
     desc: '+25% XP from gems',
     apply(p) { p.xpGain *= 1.25; },
   },
+  {
+    id: 'crit', name: 'Critical Matrix', icon: '✹', max: 4,
+    desc: '+12% crit chance (crits deal 2× damage)',
+    apply(p) { p.critChance += 0.12; },
+  },
+  {
+    id: 'blades', name: 'Orbital Blades', icon: '🌀', max: 3,
+    desc: '+1 orbiting blade, shreds on contact',
+    apply(p) { p.orbitBlades += 1; },
+  },
+  {
+    id: 'phase', name: 'Phase Boots', icon: '»', max: 3,
+    desc: 'Dash recharges 30% faster',
+    apply(p) { p.dashCooldown *= 0.7; },
+  },
+  {
+    id: 'nanorepair', name: 'Nano Repair', icon: '♥', max: 3,
+    desc: 'Regenerate 1.2 hull per second',
+    apply(p) { p.regen += 1.2; },
+  },
 ];
 
 // The player's upgrade-derived stats, fresh at the start of every run.
@@ -80,6 +100,10 @@ export function freshPlayerStats() {
     maxHp: 100,
     hp: 100,
     xpGain: 1,
+    critChance: 0,
+    orbitBlades: 0,
+    regen: 0,
+    dashCooldown: 2.6,
   };
 }
 

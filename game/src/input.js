@@ -4,6 +4,7 @@ export const ACTION_CONFIRM = 'confirm';
 export const ACTION_PAUSE = 'pause';
 export const ACTION_MUTE = 'mute';
 export const ACTION_RESTART = 'restart';
+export const ACTION_DASH = 'dash';
 
 const KEY_ACTIONS = {
   Enter: ACTION_CONFIRM,
@@ -15,6 +16,7 @@ const KEY_ACTIONS = {
   M: ACTION_MUTE,
   r: ACTION_RESTART,
   R: ACTION_RESTART,
+  Shift: ACTION_DASH,
 };
 
 export function createInput(canvas) {
@@ -41,6 +43,9 @@ export function createInput(canvas) {
       keys.add(key);
       const action = KEY_ACTIONS[key];
       if (action) pressed.add(action);
+      // Space confirms on the menus and dashes in play: the loop reads
+      // the dash action only while a run is live, so one key does both.
+      if (key === ' ') pressed.add(ACTION_DASH);
       if (key === '1' || key === '2' || key === '3') pressed.add(`pick${key}`);
     }
   }
@@ -56,8 +61,16 @@ export function createInput(canvas) {
     const point = canvasPoint(event);
     mouse.x = point.x;
     mouse.y = point.y;
+    if (event.button === 2) {
+      // Right-click is the mouse player's dash.
+      pressed.add(ACTION_DASH);
+      return;
+    }
     mouse.down = true;
     pressed.add(ACTION_CONFIRM);
+  }
+  function onContextMenu(event) {
+    event.preventDefault();
   }
   function onMouseUp() {
     mouse.down = false;
@@ -72,6 +85,7 @@ export function createInput(canvas) {
   window.addEventListener('blur', onBlur);
   canvas.addEventListener('mousemove', onMouseMove);
   canvas.addEventListener('mousedown', onMouseDown);
+  canvas.addEventListener('contextmenu', onContextMenu);
   window.addEventListener('mouseup', onMouseUp);
 
   return {
@@ -105,8 +119,7 @@ export function createInput(canvas) {
     },
     has(action) {
       return pressed.has(action);
-    },
-    clearPressed() {
+    },    clearPressed() {
       pressed.clear();
     },
     destroy() {
@@ -115,6 +128,7 @@ export function createInput(canvas) {
       window.removeEventListener('blur', onBlur);
       canvas.removeEventListener('mousemove', onMouseMove);
       canvas.removeEventListener('mousedown', onMouseDown);
+      canvas.removeEventListener('contextmenu', onContextMenu);
       window.removeEventListener('mouseup', onMouseUp);
     },
   };
@@ -125,7 +139,7 @@ export function createInput(canvas) {
 export function createScriptedInput() {
   const state = {
     mx: 0, my: 0, fire: false, aimX: 0, aimY: 0,
-    confirm: false, pick: 0,
+    confirm: false, pick: 0, dash: false,
   };
   return {
     state,
@@ -140,13 +154,17 @@ export function createScriptedInput() {
         state.confirm = false;
         return true;
       }
+      if (action === ACTION_DASH && state.dash) {
+        state.dash = false;
+        return true;
+      }
       if (action === 'pick1' && state.pick === 1) { state.pick = 0; return true; }
       if (action === 'pick2' && state.pick === 2) { state.pick = 0; return true; }
       if (action === 'pick3' && state.pick === 3) { state.pick = 0; return true; }
       return false;
     },
     has() { return false; },
-    clearPressed() { state.confirm = false; state.pick = 0; },
+    clearPressed() { state.confirm = false; state.pick = 0; state.dash = false; },
     get mouse() {
       return { x: state.aimX, y: state.aimY, down: state.fire };
     },

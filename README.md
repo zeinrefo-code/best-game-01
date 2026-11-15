@@ -14,25 +14,37 @@ enemies, the boss, the particle bursts and even the sound effects and music
 
 ## What is in the game
 
-- **Full run structure** — title screen, escalating survival, level-up offers,
-  a boss every minute, game over with score/time/kills and instant restart.
-- **Five enemy kinds** — Mites that chase, Spitters that hold range and fire,
-  Lancers that telegraph a dash, Mitosis that split in two, Bulwarks that
-  soak damage — plus the **Void Maw** boss: radial bullet bursts, charges,
-  and minion calls.
-- **Twelve upgrades** — fire rate, damage, split shot, speed, magnet, shield,
-  piercing, ricochet, nova shockwaves, plating, XP greed and more. Level up
-  and pick 1 of 3.
-- **Real feel** — screen shake, explosions, floating score text, muzzle flash,
-  damage blink, shield rings, synth SFX and a procedural bass-and-arp music
-  loop (M mutes).
+- **Full run structure** — title screen with a how-to-play panel, escalating
+  survival, level-up offers, a boss every minute, game over with the full
+  run report (score, time survived, level, kills, damage dealt, gems,
+  dashes, bosses slain) and instant restart.
+- **Seven enemy kinds** — Mites that chase, Spitters that hold range and
+  fire, Lancers that telegraph a dash, Mitosis that split in two, Bulwarks
+  that soak damage, **Fuses** — spiked mines that sprint in, light a visible
+  fuse and detonate in a chain-reacting blast — and **Longshots**, snipers
+  that hold their distance, paint a dashed red telegraph line while they
+  charge, and fire a single fast bolt — plus the **Void Maw** boss: radial
+  bullet bursts, charges, minion calls, and a rotating **spiral barrage**
+  every third volley.
+- **Sixteen upgrades** — fire rate, damage, split shot, speed, magnet,
+  shield, piercing, ricochet, nova shockwaves, plating, XP greed, plus
+  **Critical Matrix** (chance to double a hit), **Orbital Blades** (spinning
+  shards that orbit the ship), **Phase Boots** (a faster-recharging dash)
+  and **Nano Repair** (hull regeneration). Level up and pick 1 of 3.
+- **Dash** — SHIFT, SPACE or right-click bursts the ship forward,
+  untouchable for the burst, on a short cooldown shown in the HUD.
+- **Real feel** — a layered parallax void with a pulsing grid, floating
+  damage numbers (crits in big gold), hit-flash pops, dash streaks, screen
+  shake, explosions, muzzle flash, shield rings, synth SFX and a procedural
+  bass-and-arp music loop (M mutes).
 - **Deterministic scenes** — `?shot=title|play|upgrade|boss&seed=N` replays a
   seeded run with an autopilot, so the four screenshots are reproducible.
 
 ## Controls
 
-WASD / arrows move · Mouse aims · Auto-fire is always on · P pause ·
-M mute · 1/2/3 or click picks an upgrade · Enter restarts
+WASD / arrows move · Mouse aims · Auto-fire is always on · SHIFT / SPACE /
+right-click dashes · P pause · M mute · 1/2/3 or click picks an upgrade ·
+Enter restarts
 
 ## Run it
 

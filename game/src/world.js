@@ -2,7 +2,7 @@
 // and the audio layer only read this state; the loop only calls step().
 // Events are drained by the loop each step and turned into particles/sound.
 import {
-  BOSS, BOSS_TIMES, ENEMIES, PLAYER, STEP, SURGE_EVERY, difficultyAt, xpForLevel,
+  BOSS, BOSS_TIMES, ENEMIES, PLAYER, STEP, SURGE_EVERY, TAU, difficultyAt, xpForLevel,
 } from './config.js';
 import { makeBoss, makeEnemy, pickKind, spawnPoint, updateEnemy } from './enemies.js';
 import { freshPlayerStats, rollUpgrades } from './upgrades.js';
@@ -35,6 +35,14 @@ export function createWorld(rng, width, height) {
     events: [],
     shotsFired: 0,
     gemsCollected: 0,
+    // Run statistics the game-over screen reports.
+    damageDealt: 0,
+    bossesSlain: 0,
+    dashesUsed: 0,
+    // Orbital blades: the shared orbit angle and the blade positions the
+    // renderer paints, recomputed every step when the player owns blades.
+    orbitAngle: 0,
+    bladePositions: [],
   };
   resetWorld(world);
   return world;
@@ -58,6 +66,12 @@ export function resetWorld(world) {
     hurtTimer: 0,
     novaTimer: 5,
     shieldRegen: 0,
+    // Dash state: dashTimer > 0 while the burst lasts (and the ship is
+    // untouchable), dashCooldownT counts down to the next ready dash.
+    dashTimer: 0,
+    dashCooldownT: 0,
+    dashDirX: 1,
+    dashDirY: 0,
     ...stats,
   };
   world.bullets = [];
@@ -75,6 +89,11 @@ export function resetWorld(world) {
   world.events = [];
   world.shotsFired = 0;
   world.gemsCollected = 0;
+  world.damageDealt = 0;
+  world.bossesSlain = 0;
+  world.dashesUsed = 0;
+  world.orbitAngle = 0;
+  world.bladePositions = [];
 }
 
 // Apply one of the offered upgrades, then roll the next offer if another
@@ -104,16 +123,56 @@ function dropGem(world, x, y, value, big) {
   });
 }
 
-function killEnemy(world, enemy, index) {
+// Hurt one enemy for `amount`, credit the run's damage tally and float a
+// damage number. Returns true when the blow killed it (already removed).
+function hurtEnemy(world, enemy, amount, crit) {
+  const dealt = Math.min(amount, enemy.hp);
+  world.damageDealt += dealt;
+  enemy.hp -= amount;
+  enemy.flash = 1;
+  world.events.push({
+    type: 'dmg', x: enemy.x, y: enemy.y - enemy.radius - 6,
+    amount: Math.round(amount), crit: !!crit,
+  });
+  if (enemy.hp <= 0) {
+    const index = world.enemies.indexOf(enemy);
+    if (index >= 0) killEnemy(world, enemy, index, 'shot');
+    return true;
+  }
+  return false;
+}
+
+// A Fuse going up washes blastDamage over every enemy inside blastRadius
+// of the point. Victims are gathered first so chains (a Fuse caught in
+// another Fuse's blast) resolve one death at a time.
+function blastEnemies(world, x, y, radius, amount, sourceId) {
+  const victims = world.enemies.filter((e) => e.id !== sourceId
+    && Math.hypot(e.x - x, e.y - y) <= radius + e.radius);
+  for (const victim of victims) {
+    if (!world.enemies.includes(victim) || victim.hp <= 0) continue;
+    hurtEnemy(world, victim, amount, false);
+  }
+}
+
+function killEnemy(world, enemy, index, cause = 'shot') {
   world.enemies.splice(index, 1);
   world.kills += 1;
   world.score += enemy.score;
   world.events.push({ type: 'explode', x: enemy.x, y: enemy.y, color: enemy.color, big: enemy.kind === 'boss' || enemy.kind === 'bulwark' });
   if (enemy.kind === 'boss') {
     world.boss = null;
+    world.bossesSlain += 1;
     world.events.push({ type: 'bossDown' });
     for (let i = 0; i < 6; i += 1) dropGem(world, enemy.x, enemy.y, 5, true);
     return;
+  }
+  if (enemy.kind === 'fuse' && cause !== 'self') {
+    // A Fuse shot down (or nova'd, bladed or caught in another blast)
+    // detonates against the swarm: the explosion is the player's reward
+    // for popping it at range instead of letting it arrive.
+    const def = ENEMIES.fuse;
+    world.events.push({ type: 'fuseBlast', x: enemy.x, y: enemy.y, radius: def.blastRadius, color: enemy.color });
+    blastEnemies(world, enemy.x, enemy.y, def.blastRadius, def.blastDamage, enemy.id);
   }
   // Gems: one per enemy, worth its xp; tanks and splitters pay extra.
   dropGem(world, enemy.x, enemy.y, enemy.xp, enemy.xp >= 4);
@@ -131,9 +190,25 @@ function killEnemy(world, enemy, index) {
   }
 }
 
+// A lit Fuse whose timer ran out: no score, no gem, no kill credit — but
+// the blast is real, and it washes over the player as well as the swarm.
+function detonateFuse(world, enemy, index) {
+  const def = ENEMIES.fuse;
+  world.enemies.splice(index, 1);
+  world.events.push({ type: 'fuseBlast', x: enemy.x, y: enemy.y, radius: def.blastRadius, color: enemy.color });
+  world.events.push({ type: 'explode', x: enemy.x, y: enemy.y, color: enemy.color, big: true });
+  const p = world.player;
+  if (Math.hypot(p.x - enemy.x, p.y - enemy.y) <= def.blastRadius + p.radius) {
+    damagePlayer(world, enemy.damage, enemy.x, enemy.y);
+  }
+  blastEnemies(world, enemy.x, enemy.y, def.blastRadius, def.blastDamage, enemy.id);
+}
+
 function damagePlayer(world, amount, x, y) {
   const p = world.player;
   if (p.hurtTimer > 0 || world.over) return;
+  // Mid-dash the ship is a streak of light: nothing can touch it.
+  if (p.dashTimer > 0) return;
   if (p.shield > 0) {
     p.shield -= 1;
     p.hurtTimer = PLAYER.contactDamageCooldown;
@@ -191,8 +266,9 @@ function nearestEnemy(world, x, y, excludeId, maxDist) {
   return best;
 }
 
-// One fixed step. `input` is {mx, my, aimX, aimY, fire}: movement axis,
-// aim point and whether the trigger is held (auto-fire keeps it true).
+// One fixed step. `input` is {mx, my, aimX, aimY, fire, dash}: movement
+// axis, aim point, whether the trigger is held (auto-fire keeps it true)
+// and whether a dash was requested this step.
 export function stepWorld(world, input, dt = STEP) {
   if (world.over) return;
   world.time += dt;
@@ -200,20 +276,52 @@ export function stepWorld(world, input, dt = STEP) {
   const p = world.player;
   const field = world.field;
 
-  // --- Player movement: acceleration, damping, arena clamp.
-  p.vx += input.mx * PLAYER.accel * dt;
-  p.vy += input.my * PLAYER.accel * dt;
-  const damp = Math.max(0, 1 - PLAYER.damping * dt);
-  p.vx *= damp;
-  p.vy *= damp;
-  const speed = Math.hypot(p.vx, p.vy);
-  if (speed > p.maxSpeed) {
-    p.vx = (p.vx / speed) * p.maxSpeed;
-    p.vy = (p.vy / speed) * p.maxSpeed;
+  // --- Dash: starts on request when charged, overrides steering while
+  // it lasts, and leaves a fading trail for the renderer to paint.
+  p.dashCooldownT = Math.max(0, p.dashCooldownT - dt);
+  if (input.dash && p.dashCooldownT <= 0 && p.dashTimer <= 0) {
+    let dirX = input.mx;
+    let dirY = input.my;
+    if (dirX === 0 && dirY === 0) {
+      dirX = Math.cos(p.angle);
+      dirY = Math.sin(p.angle);
+    }
+    const len = Math.hypot(dirX, dirY) || 1;
+    p.dashDirX = dirX / len;
+    p.dashDirY = dirY / len;
+    p.dashTimer = PLAYER.dashDuration;
+    p.dashCooldownT = p.dashCooldown;
+    world.dashesUsed += 1;
+    world.events.push({ type: 'dash', x: p.x, y: p.y, angle: Math.atan2(p.dashDirY, p.dashDirX) });
+  }
+
+  // --- Player movement: acceleration, damping, arena clamp. Mid-dash
+  // the velocity is the dash itself; steering resumes when it ends.
+  if (p.dashTimer > 0) {
+    p.dashTimer -= dt;
+    p.vx = p.dashDirX * PLAYER.dashSpeed;
+    p.vy = p.dashDirY * PLAYER.dashSpeed;
+    world.events.push({ type: 'dashTrail', x: p.x, y: p.y });
+  } else {
+    p.vx += input.mx * PLAYER.accel * dt;
+    p.vy += input.my * PLAYER.accel * dt;
+    const damp = Math.max(0, 1 - PLAYER.damping * dt);
+    p.vx *= damp;
+    p.vy *= damp;
+    const speed = Math.hypot(p.vx, p.vy);
+    if (speed > p.maxSpeed) {
+      p.vx = (p.vx / speed) * p.maxSpeed;
+      p.vy = (p.vy / speed) * p.maxSpeed;
+    }
   }
   p.x = Math.max(p.radius, Math.min(field.width - p.radius, p.x + p.vx * dt));
   p.y = Math.max(p.radius, Math.min(field.height - p.radius, p.y + p.vy * dt));
   p.hurtTimer = Math.max(0, p.hurtTimer - dt);
+
+  // Nano Repair: a slow, steady hull regeneration.
+  if (p.regen > 0 && p.hp > 0) {
+    p.hp = Math.min(p.maxHp, p.hp + p.regen * dt);
+  }
 
   // Shield recharges one charge every 12 seconds, up to the max.
   if (p.maxShield > 0 && p.shield < p.maxShield) {
@@ -239,12 +347,33 @@ export function stepWorld(world, input, dt = STEP) {
       const radius = 170 + p.novaLevel * 30;
       const damage = 20 + p.novaLevel * 12;
       world.events.push({ type: 'nova', x: p.x, y: p.y, radius });
-      for (let i = world.enemies.length - 1; i >= 0; i -= 1) {
-        const e = world.enemies[i];
+      // Snapshot: a nova-killed Fuse can blast other enemies off the
+      // list while this loop is still walking it.
+      for (const e of [...world.enemies]) {
+        if (!world.enemies.includes(e)) continue;
         if (Math.hypot(e.x - p.x, e.y - p.y) <= radius + e.radius) {
-          e.hp -= damage;
-          e.flash = 1;
-          if (e.hp <= 0) killEnemy(world, e, i);
+          hurtEnemy(world, e, damage, false);
+        }
+      }
+    }
+  }
+
+  // --- Orbital blades: a ring of light that shreds what it touches,
+  // each enemy safe again only after its own contact cooldown.
+  world.bladePositions = [];
+  if (p.orbitBlades > 0) {
+    world.orbitAngle += dt * 2.8;
+    const orbitRadius = 68;
+    for (let k = 0; k < p.orbitBlades; k += 1) {
+      const a = world.orbitAngle + (k / p.orbitBlades) * TAU;
+      const bx = p.x + Math.cos(a) * orbitRadius;
+      const by = p.y + Math.sin(a) * orbitRadius;
+      world.bladePositions.push({ x: bx, y: by, angle: a });
+      for (const e of [...world.enemies]) {
+        if (!world.enemies.includes(e) || e.bladeCd > 0) continue;
+        if (Math.hypot(e.x - bx, e.y - by) < 15 + e.radius) {
+          e.bladeCd = 0.45;
+          hurtEnemy(world, e, 18, false);
         }
       }
     }
@@ -266,12 +395,12 @@ export function stepWorld(world, input, dt = STEP) {
         if (Math.abs(b.x - e.x) < rr && Math.abs(b.y - e.y) < rr
           && Math.hypot(b.x - e.x, b.y - e.y) < rr) {
           b.hitIds.add(e.id);
-          e.hp -= b.damage;
-          e.flash = 1;
+          // Critical Matrix: a rolled chance to double the blow.
+          const crit = p.critChance > 0 && world.rng.chance(p.critChance);
           world.events.push({ type: 'hit', x: b.x, y: b.y, color: e.color });
-          if (e.hp <= 0) {
-            killEnemy(world, e, j);
-          }
+          hurtEnemy(world, e, crit ? b.damage * 2 : b.damage, crit);
+          // Whether the blow killed or not, the bullet's own rules run:
+          // pierce flies on, ricochet hunts a new target, else it dies.
           if (b.pierce > 0) {
             b.pierce -= 1;
           } else if (b.ricochet > 0) {
@@ -300,10 +429,13 @@ export function stepWorld(world, input, dt = STEP) {
   const ctx = { player: p, rng: world.rng, field };
   for (let i = world.enemies.length - 1; i >= 0; i -= 1) {
     const e = world.enemies[i];
+    // A blast chain earlier in this loop may have shrunk the list.
+    if (!e) continue;
     const fired = updateEnemy(e, ctx, dt);
     for (const shot of fired) {
       world.enemyBullets.push(shot);
-      if (e.kind === 'spitter') world.events.push({ type: 'enemyShoot', x: e.x, y: e.y });
+      if (shot.snipe) world.events.push({ type: 'snipe', x: e.x, y: e.y });
+      else if (e.kind === 'spitter') world.events.push({ type: 'enemyShoot', x: e.x, y: e.y });
     }
     if (e.spawnMinions) {
       const n = e.spawnMinions;
@@ -315,6 +447,11 @@ export function stepWorld(world, input, dt = STEP) {
         mite.y += Math.sin(a) * (e.radius + 16);
         world.enemies.push(mite);
       }
+    }
+    if (e.explodeNow) {
+      detonateFuse(world, e, i);
+      if (world.over) return;
+      continue;
     }
     const rr = e.radius + p.radius - 2;
     if (Math.hypot(e.x - p.x, e.y - p.y) < rr) {
@@ -429,5 +566,9 @@ export function hudState(world) {
     enemies: world.enemies.length,
     boss: world.boss ? { hp: Math.max(0, Math.ceil(world.boss.hp)), maxHp: world.boss.maxHp, tier: world.boss.tier } : null,
     surge: world.surgeCount,
+    damageDealt: Math.floor(world.damageDealt),
+    bossesSlain: world.bossesSlain,
+    dashesUsed: world.dashesUsed,
+    dashReady: world.player.dashCooldownT <= 0,
   };
 }

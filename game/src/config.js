@@ -45,6 +45,9 @@ export const PLAYER = {
   pickupRadius: 90,
   contactDamageCooldown: 0.55,
   invulnerableAfterHit: 0.9,
+  // The dash: a short burst at dashSpeed that ignores damage while it lasts.
+  dashSpeed: 1280,
+  dashDuration: 0.16,
 };
 
 // Experience curve: xp needed to go from level L to L+1.
@@ -72,6 +75,12 @@ export const BOSS = {
   contactDamage: 22,
   score: 500,
   xp: 40,
+  // Every Nth volley is not a radial burst but a rotating spiral barrage.
+  spiralEvery: 3,
+  spiralDuration: 1.5,
+  spiralTick: 0.07,
+  spiralStep: 0.46,
+  spiralShotSpeed: 185,
 };
 
 // One row per enemy kind. `kind` is the id the world and renderer switch on.
@@ -95,6 +104,21 @@ export const ENEMIES = {
     damage: 10, color: '#39ff88', core: '#d8ffe9', shape: 'hex',
     splits: 2,
   },
+  fuse: {
+    // Kamikaze: sprints at the ship, lights its fuse up close and blows.
+    // Shot down first, its blast turns on the swarm instead.
+    name: 'Fuse', radius: 13, hp: 16, speed: 178, score: 30, xp: 2,
+    damage: 20, color: '#ff6b35', core: '#ffe3c2', shape: 'bomb',
+    explodes: true, fuseRange: 74, fuseTime: 0.38, blastRadius: 98, blastDamage: 42,
+  },
+  longshot: {
+    // A sniper: holds long range, paints a telegraphed aim line while it
+    // charges, then fires one fast bolt the player has to dodge or dash.
+    name: 'Longshot', radius: 14, hp: 34, speed: 92, score: 35, xp: 3,
+    damage: 14, color: '#ff9f1c', core: '#ffedc2', shape: 'lens',
+    snipes: true, keepDistance: 405, snipeRange: 640,
+    snipeCharge: 0.85, snipeCooldown: 2.9, shotSpeed: 580,
+  },
   bulwark: {
     name: 'Bulwark', radius: 26, hp: 130, speed: 46, score: 50, xp: 4,
     damage: 16, color: '#8d99ae', core: '#e9edf2', shape: 'square',
@@ -107,7 +131,9 @@ export function spawnWeights(seconds) {
     { kind: 'mite', weight: 10 },
     { kind: 'spitter', weight: seconds > 18 ? 4 : 0 },
     { kind: 'lancer', weight: seconds > 35 ? 4 : 0 },
+    { kind: 'fuse', weight: seconds > 40 ? 4 : 0 },
     { kind: 'mitosis', weight: seconds > 55 ? 3 : 0 },
+    { kind: 'longshot', weight: seconds > 65 ? 3 : 0 },
     { kind: 'bulwark', weight: seconds > 80 ? 3 : 0 },
   ];
   return table.filter((row) => row.weight > 0);

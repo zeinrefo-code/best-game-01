@@ -120,6 +120,16 @@ export function createAudio() {
     },
     shoot() { tone(880, 0.07, 'square', 0.10, 320); },
     enemyShoot() { tone(220, 0.12, 'sawtooth', 0.06, 140); },
+    snipe() {
+      // The Longshot's bolt: a crack that drops in pitch as it passes.
+      tone(1500, 0.11, 'square', 0.10, 240);
+      noise(0.06, 0.06, 3200);
+    },
+    dash() {
+      // A whoosh of displaced air, bright and quick.
+      noise(0.16, 0.16, 2400);
+      tone(280, 0.16, 'sine', 0.14, 920);
+    },
     explode(big) {
       noise(big ? 0.5 : 0.28, big ? 0.5 : 0.3, big ? 900 : 1400);
       tone(big ? 120 : 160, 0.25, 'sine', 0.35, 40);

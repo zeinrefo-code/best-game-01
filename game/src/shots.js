@@ -10,10 +10,11 @@ import { SCREEN_LEVELUP, SCREEN_OVER, SCREEN_PLAY, SCREEN_TITLE } from './render
 const SAMPLE = STEP;
 
 // Autopilot: aim at the nearest enemy, run from anything too close, chase
-// the nearest gem when it is safe, and kite the boss at mid range.
+// the nearest gem when it is safe, and kite the boss at mid range. When
+// something closes inside dash range it bursts out, untouchable.
 export function autopilot(world) {
   const p = world.player;
-  const input = { mx: 0, my: 0, aimX: p.x, aimY: p.y - 100, fire: true };
+  const input = { mx: 0, my: 0, aimX: p.x, aimY: p.y - 100, fire: true, dash: false };
 
   let nearest = null;
   let nearestDist = Infinity;
@@ -97,6 +98,8 @@ export function autopilot(world) {
     input.mx = fx / len;
     input.my = fy / len;
   }
+  // Point-blank is dash territory: burst out along the flee vector.
+  if (nearest && nearestDist < 84 && p.dashCooldownT <= 0) input.dash = true;
   return input;
 }
 
@@ -133,7 +136,8 @@ export function stageShot(name, world, applyUpgradeFn) {
       elapsed += SAMPLE;
     }
     // Then wait for a frameable moment: the ship near the centre with a
-    // crowd around it, so the screenshot reads as a fight, not an empty
+    // crowd around it — ideally including one of the new horrors, a Fuse
+    // or a Longshot — so the screenshot reads as a fight, not an empty
     // corner of the void.
     let framed = 0;
     while (framed < 14 && !world.over) {
@@ -144,10 +148,14 @@ export function stageShot(name, world, applyUpgradeFn) {
       const cx = p.x > world.field.width * 0.3 && p.x < world.field.width * 0.7;
       const cy = p.y > world.field.height * 0.25 && p.y < world.field.height * 0.75;
       let near = 0;
+      let newNear = false;
       for (const e of world.enemies) {
-        if (Math.hypot(e.x - p.x, e.y - p.y) < 430) near += 1;
+        if (Math.hypot(e.x - p.x, e.y - p.y) < 430) {
+          near += 1;
+          if (e.shape === 'bomb' || e.shape === 'lens') newNear = true;
+        }
       }
-      if (cx && cy && near >= 6) break;
+      if (cx && cy && near >= 6 && (newNear || framed > 8)) break;
       stepWorld(world, autopilot(world), SAMPLE);
       elapsed += SAMPLE;
       framed += SAMPLE;
@@ -173,14 +181,17 @@ export function stageShot(name, world, applyUpgradeFn) {
       waited += SAMPLE;
     }
     if (world.over) return { screen: SCREEN_OVER, best: 0, simulated: waited };
-    // Auto-pick any level-up that appears on the way so the fight continues.
+    // Auto-pick any level-up that appears on the way so the fight
+    // continues — and stop mid spiral-barrage, so the frame catches the
+    // Maw's new attack pattern streaming.
     let fought = 0;
-    while (fought < 14 && !world.over) {
+    while (fought < 22 && !world.over) {
       if (world.pendingLevelUps > 0 && world.choices.length > 0) {
         applyUpgradeFn(world, world.choices[0]);
       }
       stepWorld(world, autopilot(world), SAMPLE);
       fought += SAMPLE;
+      if (world.boss && world.boss.spiralT > 0.35 && fought > 2) break;
     }
     return { screen: world.over ? SCREEN_OVER : SCREEN_PLAY, best: 0, simulated: waited + fought };
   }

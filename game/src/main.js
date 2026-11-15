@@ -42,6 +42,17 @@ const audio = createAudio();
 const particles = createParticles();
 const input = createInput(canvas);
 
+// Debug handle: lets a test driver read the live state (time, screen,
+// enemies) without touching the game. Harmless in normal play.
+window.__voidpulse = {
+  world,
+  get screen() { return screen; },
+  get best() { return best; },
+  get frames() { return frames; },
+  get time() { return time; },
+  get steps() { return steps; },
+};
+
 function readBest() {
   try {
     return Number.parseInt(window.localStorage.getItem(BEST_KEY) ?? '0', 10) || 0;
@@ -62,6 +73,9 @@ function saveBest(value) {
 let best = readBest();
 let screen = SCREEN_TITLE;
 let time = 0;
+let frames = 0;
+let steps = 0;
+let accumulator = 0;
 let banner = null;
 let mouseMoved = false;
 let soakDone = false;
@@ -77,7 +91,24 @@ canvas.addEventListener('mousemove', () => {
   }
 });
 
-// Drain the world's event queue into particles and sound.
+// Advance the world by the time the frames actually delivered. The
+// accumulator lives across frames: rAF callbacks can arrive in bursts (two
+// back-to-back, then a gap), and a per-frame accumulator would throw the
+// gap's leftover away and run the game slow.
+function stepAccumulated(control, dt, stopOnLevelUp) {
+  accumulator += dt;
+  let n = 0;
+  while (accumulator >= STEP && n < 8) {
+    if (world.over) break;
+    stepWorld(world, control, STEP);
+    steps += 1;
+    accumulator -= STEP;
+    n += 1;
+    if (stopOnLevelUp && world.pendingLevelUps > 0 && world.choices.length > 0) break;
+  }
+  // Never hoard more than a few steps of backlog (a hidden tab, a stall).
+  if (accumulator > STEP * 4) accumulator = STEP * 4;
+}
 function handleEvents() {
   for (const event of world.events) {
     if (event.type === 'shoot') {
@@ -185,10 +216,14 @@ function levelUpClick() {
   }
 }
 
-function frame(now) {
+function frame() {
   requestAnimationFrame(frame);
-  const dt = Math.min(MAX_FRAME, (now - last) / 1000 || 0);
-  last = now;
+  frames += 1;
+  // performance.now(), not the rAF timestamp: the rAF timestamp is a vsync
+  // clock that can run slower than real time in headless Chrome.
+  const nowMs = performance.now();
+  const dt = Math.min(MAX_FRAME, (nowMs - last) / 1000 || 0);
+  last = nowMs;
   time += dt;
   if (banner) {
     banner.age += dt;
@@ -200,7 +235,7 @@ function frame(now) {
   if (screen === SCREEN_TITLE) {
     // The title idles over a live world: step it gently with the autopilot
     // so the background is a real game in progress, not a still image.
-    stepWorld(world, autopilot(world), STEP);
+    stepAccumulated(autopilot(world), dt, false);
     handleEvents();
     if (world.over) resetWorld(world);
     if (input.take(ACTION_CONFIRM) || input.take(ACTION_RESTART)) startRun();
@@ -212,13 +247,7 @@ function frame(now) {
       audio.toggleMute();
     } else {
       const control = soak ? autopilot(world) : liveControl();
-      let accumulator = dt;
-      while (accumulator >= STEP) {
-        if (world.over) break;
-        stepWorld(world, control, STEP);
-        accumulator -= STEP;
-        if (world.pendingLevelUps > 0 && world.choices.length > 0) break;
-      }
+      stepAccumulated(control, dt, true);
       handleEvents();
       if (world.over) {
         screen = SCREEN_OVER;

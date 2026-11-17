@@ -81,6 +81,20 @@ export const BOSS = {
   spiralTick: 0.07,
   spiralStep: 0.46,
   spiralShotSpeed: 185,
+  // Between volleys the Maw also sheds a nova ring: a full circle of
+  // bolts the player has to dash through or outrun.
+  novaEvery: 11,
+  novaCount: 26,
+  novaSpeed: 205,
+};
+
+// Combo chains: kills landed inside the window keep the chain alive and
+// every stepKills kills raise the score multiplier by one, to maxMult.
+// Let the chain lapse and the multiplier falls back to one.
+export const COMBO = {
+  windowSec: 2.5,
+  stepKills: 8,
+  maxMult: 5,
 };
 
 // One row per enemy kind. `kind` is the id the world and renderer switch on.
@@ -123,6 +137,14 @@ export const ENEMIES = {
     name: 'Bulwark', radius: 26, hp: 130, speed: 46, score: 50, xp: 4,
     damage: 16, color: '#8d99ae', core: '#e9edf2', shape: 'square',
   },
+  weaver: {
+    // A strafing gun-ring: it never flies straight, weaving side to side
+    // as it closes, and peppers the ship with aimed shots — hard to lead,
+    // harder to ignore.
+    name: 'Weaver', radius: 13, hp: 24, speed: 118, score: 30, xp: 2,
+    damage: 10, color: '#4df3ff', core: '#e0fdff', shape: 'orb',
+    shoots: true, shotInterval: 2.1, shotSpeed: 230,
+  },
 };
 
 // Waves of spawning: weights shift as the clock advances so new kinds appear.
@@ -132,6 +154,7 @@ export function spawnWeights(seconds) {
     { kind: 'spitter', weight: seconds > 18 ? 4 : 0 },
     { kind: 'lancer', weight: seconds > 35 ? 4 : 0 },
     { kind: 'fuse', weight: seconds > 40 ? 4 : 0 },
+    { kind: 'weaver', weight: seconds > 48 ? 3 : 0 },
     { kind: 'mitosis', weight: seconds > 55 ? 3 : 0 },
     { kind: 'longshot', weight: seconds > 65 ? 3 : 0 },
     { kind: 'bulwark', weight: seconds > 80 ? 3 : 0 },

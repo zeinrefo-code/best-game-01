@@ -99,6 +99,25 @@ export function createRenderer(canvas) {
       ctx.fillRect(0, 0, field.width, field.height);
     }
 
+    // Aurora veils: two wide diagonal ribbons of coloured light that
+    // drift and breathe behind everything, so the void is never flat.
+    for (let i = 0; i < 2; i += 1) {
+      const drift = Math.sin(time * 0.07 + i * 2.4) * 46;
+      const sway = Math.sin(time * 0.045 + i * 1.7) * 0.05;
+      ctx.save();
+      ctx.translate(field.width / 2, field.height / 2);
+      ctx.rotate(-0.52 + sway + i * 0.24);
+      const ag = ctx.createLinearGradient(-field.width, 0, field.width, 0);
+      const hue = i === 0 ? '77, 243, 255' : '255, 46, 99';
+      const peak = 0.045 + 0.02 * (0.5 + 0.5 * Math.sin(time * 0.11 + i * 2.1));
+      ag.addColorStop(0, `rgba(${hue}, 0)`);
+      ag.addColorStop(0.5, `rgba(${hue}, ${peak})`);
+      ag.addColorStop(1, `rgba(${hue}, 0)`);
+      ctx.fillStyle = ag;
+      ctx.fillRect(-field.width, -58 + drift + i * 130, field.width * 2, 116);
+      ctx.restore();
+    }
+
     drawStarLayer(starsFar, field, time, -leanX * 0.012, -leanY * 0.012, '#cfc6ff');
 
     // Grid, drifting slowly downward so the void feels alive — and it
@@ -140,6 +159,39 @@ export function createRenderer(canvas) {
     ctx.fillRect(0, bandY - 70, field.width, 140);
 
     drawStarLayer(starsNear, field, time, -leanX * 0.035, -leanY * 0.035, '#efeaff');
+
+    // Shooting stars: brief bright streaks on fixed cycles. Every part
+    // is a function of the clock (a hashed cycle index picks the start
+    // point), so a staged screenshot always catches the same sky.
+    for (let i = 0; i < 3; i += 1) {
+      const period = 6.5 + i * 3.1;
+      const cycle = Math.floor(time / period) + i * 7;
+      const frac = (time % period) / period;
+      if (frac > 0.085) continue;
+      const prog = frac / 0.085;
+      const hash = (n) => {
+        const v = Math.sin(cycle * 12.9898 + n * 78.233) * 43758.5453;
+        return v - Math.floor(v);
+      };
+      const sx = hash(1) * field.width * 0.8;
+      const sy = hash(2) * field.height * 0.4;
+      const dx = 0.82;
+      const dy = 0.45;
+      const hx = sx + dx * prog * 460;
+      const hy = sy + dy * prog * 460;
+      const tail = 90 * Math.sin(prog * Math.PI);
+      const grad = ctx.createLinearGradient(hx - dx * tail, hy - dy * tail, hx, hy);
+      grad.addColorStop(0, 'rgba(239, 234, 255, 0)');
+      grad.addColorStop(1, `rgba(239, 234, 255, ${0.75 * Math.sin(prog * Math.PI)})`);
+      ctx.save();
+      ctx.strokeStyle = grad;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(hx - dx * tail, hy - dy * tail);
+      ctx.lineTo(hx, hy);
+      ctx.stroke();
+      ctx.restore();
+    }
 
     // A soft vignette keeps the edges dark and the centre readable.
     const v = ctx.createRadialGradient(
@@ -327,7 +379,46 @@ export function createRenderer(canvas) {
         ctx.arc(0, 0, r + 10 - e.aimFrac * 6, -Math.PI / 2, -Math.PI / 2 + e.aimFrac * TAU);
         ctx.stroke();
       }
+    } else if (e.shape === 'orb') {
+      // The Weaver: a gun-ring with three satellite sparks in orbit, so
+      // even standing still it never stops moving.
+      ctx.beginPath();
+      ctx.arc(0, 0, r, 0, TAU);
+      ctx.fill();
+      ctx.stroke();
+      ctx.fillStyle = e.core;
+      ctx.beginPath();
+      ctx.arc(0, 0, r * 0.42, 0, TAU);
+      ctx.fill();
+      for (let k = 0; k < 3; k += 1) {
+        const a = time * 3.4 + e.wobble + (k / 3) * TAU;
+        ctx.beginPath();
+        ctx.arc(Math.cos(a) * r * 1.45, Math.sin(a) * r * 1.45, 3.2, 0, TAU);
+        ctx.fill();
+      }
     } else if (e.shape === 'maw') {
+      // A slow dashed halo turns around the Maw, and a nova burst sheds
+      // an expanding shockwave ring while its flash lasts.
+      ctx.save();
+      ctx.rotate(-time * 0.45);
+      ctx.strokeStyle = 'rgba(255, 46, 99, 0.38)';
+      ctx.lineWidth = 2;
+      ctx.setLineDash([16, 12]);
+      ctx.beginPath();
+      ctx.arc(0, 0, r * 1.32, 0, TAU);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.restore();
+      if (e.novaFlash > 0) {
+        ctx.save();
+        ctx.globalAlpha = e.novaFlash * 0.55;
+        ctx.strokeStyle = '#ffd3da';
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.arc(0, 0, r + (1 - e.novaFlash) * 240, 0, TAU);
+        ctx.stroke();
+        ctx.restore();
+      }
       // The Void Maw: a toothed ring around a pulsing core.
       const teeth = 12;
       const pulse = 1 + 0.06 * Math.sin(time * 4);
@@ -556,6 +647,16 @@ export function createRenderer(canvas) {
     ctx.fillStyle = PALETTE.dim;
     ctx.fillText(`TIME ${fmtTime(world.time)}   KILLS ${world.kills}   LEVEL ${world.level}`, 16, 58);
 
+    // Combo meter: while a chain is alive it shows the multiplier and
+    // how much of its window is left, draining in gold under the score.
+    if (world.combo && world.combo.count >= 3) {
+      const frac = Math.max(0, Math.min(1, world.combo.timer / 2.5));
+      ctx.fillStyle = PALETTE.gold;
+      ctx.font = 'bold 17px "Segoe UI", system-ui, sans-serif';
+      ctx.fillText(`COMBO ×${world.combo.mult}  ·  ${world.combo.count} CHAIN`, 16, 84);
+      bar(16, 92, 150, 5, frac, PALETTE.gold);
+    }
+
     // Top-right: level + XP bar.
     ctx.textAlign = 'right';
     ctx.fillStyle = PALETTE.text;
@@ -661,6 +762,29 @@ export function createRenderer(canvas) {
     ctx.font = '600 23px "Segoe UI", system-ui, sans-serif';
     ctx.fillText('N E O N   A R E N A   S U R V I V A L', cx, field.height * 0.24 + 38);
 
+    // A dashed halo ellipse hugs the title, its dashes crawling and six
+    // sparks riding the rim — the menu itself is alive.
+    ctx.save();
+    ctx.translate(cx, field.height * 0.24 - 10);
+    ctx.strokeStyle = 'rgba(124, 92, 255, 0.45)';
+    ctx.lineWidth = 2;
+    ctx.setLineDash([22, 16]);
+    ctx.lineDashOffset = -time * 26;
+    ctx.beginPath();
+    ctx.ellipse(0, 0, 252, 76, 0, 0, TAU);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle = PALETTE.player;
+    ctx.shadowColor = PALETTE.player;
+    ctx.shadowBlur = 12;
+    for (let k = 0; k < 6; k += 1) {
+      const a = (k / 6) * TAU + time * 0.22;
+      ctx.beginPath();
+      ctx.arc(Math.cos(a) * 252, Math.sin(a) * 76, 3.4, 0, TAU);
+      ctx.fill();
+    }
+    ctx.restore();
+
     // The how-to-play panel: controls on the left, the mission on the
     // right, so a first-time player knows everything before they start.
     const pw = Math.min(820, field.width - 72);
@@ -687,7 +811,7 @@ export function createRenderer(canvas) {
       'Survive the swarm — gems are XP',
       'Level up: pick 1 of 3 upgrades (16 exist)',
       'The Void Maw attacks at 1:00 · 2:30 · 4:10',
-      'New horrors join as the clock runs',
+      'Chain kills: combos multiply your score',
     ];
     left.forEach((line, i) => ctx.fillText(line, colL, py + 58 + i * 23));
     right.forEach((line, i) => ctx.fillText(line, colR, py + 58 + i * 23));
@@ -790,7 +914,7 @@ export function createRenderer(canvas) {
       cx, field.height / 2 + 12,
     );
     ctx.fillText(
-      `Void Maws slain ${world.bossesSlain}  ·  Dashes ${world.dashesUsed}`,
+      `Void Maws slain ${world.bossesSlain}  ·  Dashes ${world.dashesUsed}  ·  Best chain ×${world.bestChain}`,
       cx, field.height / 2 + 42,
     );
     if (Math.floor(world.score) >= best && best > 0) {

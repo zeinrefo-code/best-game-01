@@ -2,7 +2,7 @@
 // and the audio layer only read this state; the loop only calls step().
 // Events are drained by the loop each step and turned into particles/sound.
 import {
-  BOSS, BOSS_TIMES, ENEMIES, PLAYER, STEP, SURGE_EVERY, TAU, difficultyAt, xpForLevel,
+  BOSS, BOSS_TIMES, COMBO, ENEMIES, PLAYER, STEP, SURGE_EVERY, TAU, difficultyAt, xpForLevel,
 } from './config.js';
 import { makeBoss, makeEnemy, pickKind, spawnPoint, updateEnemy } from './enemies.js';
 import { freshPlayerStats, rollUpgrades } from './upgrades.js';
@@ -39,6 +39,10 @@ export function createWorld(rng, width, height) {
     damageDealt: 0,
     bossesSlain: 0,
     dashesUsed: 0,
+    // Combo chain: kills inside the window grow the chain, and the
+    // chain sets the score multiplier (see COMBO in config.js).
+    combo: { count: 0, timer: 0, mult: 1 },
+    bestChain: 0,
     // Orbital blades: the shared orbit angle and the blade positions the
     // renderer paints, recomputed every step when the player owns blades.
     orbitAngle: 0,
@@ -92,6 +96,8 @@ export function resetWorld(world) {
   world.damageDealt = 0;
   world.bossesSlain = 0;
   world.dashesUsed = 0;
+  world.combo = { count: 0, timer: 0, mult: 1 };
+  world.bestChain = 0;
   world.orbitAngle = 0;
   world.bladePositions = [];
 }
@@ -157,7 +163,18 @@ function blastEnemies(world, x, y, radius, amount, sourceId) {
 function killEnemy(world, enemy, index, cause = 'shot') {
   world.enemies.splice(index, 1);
   world.kills += 1;
-  world.score += enemy.score;
+  // Combo: every kill feeds the chain and refreshes its window; when
+  // the chain crosses a step the multiplier rises and the kill pays at
+  // the new rate. The Maw pays its 500 through the same multiplier.
+  world.combo.count += 1;
+  world.combo.timer = COMBO.windowSec;
+  if (world.combo.count > world.bestChain) world.bestChain = world.combo.count;
+  const mult = Math.min(COMBO.maxMult, 1 + Math.floor(world.combo.count / COMBO.stepKills));
+  if (mult > world.combo.mult) {
+    world.combo.mult = mult;
+    world.events.push({ type: 'comboUp', mult, x: world.player.x, y: world.player.y });
+  }
+  world.score += enemy.score * world.combo.mult;
   world.events.push({ type: 'explode', x: enemy.x, y: enemy.y, color: enemy.color, big: enemy.kind === 'boss' || enemy.kind === 'bulwark' });
   if (enemy.kind === 'boss') {
     world.boss = null;
@@ -273,6 +290,14 @@ export function stepWorld(world, input, dt = STEP) {
   if (world.over) return;
   world.time += dt;
   world.score += dt * 5;
+  // The combo chain lapses when its window runs out.
+  if (world.combo.count > 0) {
+    world.combo.timer -= dt;
+    if (world.combo.timer <= 0) {
+      world.combo.count = 0;
+      world.combo.mult = 1;
+    }
+  }
   const p = world.player;
   const field = world.field;
 
@@ -432,10 +457,16 @@ export function stepWorld(world, input, dt = STEP) {
     // A blast chain earlier in this loop may have shrunk the list.
     if (!e) continue;
     const fired = updateEnemy(e, ctx, dt);
+    let novaPushed = false;
     for (const shot of fired) {
       world.enemyBullets.push(shot);
       if (shot.snipe) world.events.push({ type: 'snipe', x: e.x, y: e.y });
-      else if (e.kind === 'spitter') world.events.push({ type: 'enemyShoot', x: e.x, y: e.y });
+      else if (shot.nova) {
+        if (!novaPushed) {
+          novaPushed = true;
+          world.events.push({ type: 'bossNova', x: e.x, y: e.y });
+        }
+      } else if (e.kind === 'spitter' || e.kind === 'weaver') world.events.push({ type: 'enemyShoot', x: e.x, y: e.y });
     }
     if (e.spawnMinions) {
       const n = e.spawnMinions;
@@ -569,6 +600,9 @@ export function hudState(world) {
     damageDealt: Math.floor(world.damageDealt),
     bossesSlain: world.bossesSlain,
     dashesUsed: world.dashesUsed,
+    comboMult: world.combo.mult,
+    comboCount: world.combo.count,
+    bestChain: world.bestChain,
     dashReady: world.player.dashCooldownT <= 0,
   };
 }

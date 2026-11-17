@@ -127,8 +127,10 @@ export function stageShot(name, world, applyUpgradeFn) {
   if (name === 'play') {
     // A busy mid-game frame: auto-pick upgrades as they come so the run
     // reaches the thick of the swarm instead of stopping at level 2.
+    // The staging stays ahead of the first Maw (60 s): this scene is
+    // the swarm fight, the boss has its own scene.
     let elapsed = 0;
-    while (elapsed < 58 && !world.over) {
+    while (elapsed < 54 && !world.over) {
       if (world.pendingLevelUps > 0 && world.choices.length > 0) {
         applyUpgradeFn(world, world.choices[0]);
       }
@@ -136,11 +138,11 @@ export function stageShot(name, world, applyUpgradeFn) {
       elapsed += SAMPLE;
     }
     // Then wait for a frameable moment: the ship near the centre with a
-    // crowd around it — ideally including one of the new horrors, a Fuse
-    // or a Longshot — so the screenshot reads as a fight, not an empty
-    // corner of the void.
+    // crowd around it — ideally including one of the new horrors, a
+    // Fuse, a Longshot or a Weaver — so the screenshot reads as a fight,
+    // not an empty corner of the void.
     let framed = 0;
-    while (framed < 14 && !world.over) {
+    while (framed < 5 && !world.over) {
       if (world.pendingLevelUps > 0 && world.choices.length > 0) {
         applyUpgradeFn(world, world.choices[0]);
       }
@@ -152,10 +154,11 @@ export function stageShot(name, world, applyUpgradeFn) {
       for (const e of world.enemies) {
         if (Math.hypot(e.x - p.x, e.y - p.y) < 430) {
           near += 1;
-          if (e.shape === 'bomb' || e.shape === 'lens') newNear = true;
+          if (e.shape === 'bomb' || e.shape === 'lens' || e.shape === 'orb') newNear = true;
         }
       }
-      if (cx && cy && near >= 6 && (newNear || framed > 8)) break;
+      if (cx && cy && near >= 9 && newNear) break;
+      if (framed > 4 && cx && cy && near >= 6) break;
       stepWorld(world, autopilot(world), SAMPLE);
       elapsed += SAMPLE;
       framed += SAMPLE;
@@ -183,17 +186,73 @@ export function stageShot(name, world, applyUpgradeFn) {
     if (world.over) return { screen: SCREEN_OVER, best: 0, simulated: waited };
     // Auto-pick any level-up that appears on the way so the fight
     // continues — and stop mid spiral-barrage, so the frame catches the
-    // Maw's new attack pattern streaming.
+    // Maw's signature attack streaming. The Maw must also be properly
+    // in frame: a boss clipped by the arena edge wastes the shot, so
+    // keep fighting (up to the cap) until the spiral runs with the Maw
+    // inside the central stage.
     let fought = 0;
-    while (fought < 22 && !world.over) {
+    while (fought < 30 && !world.over) {
       if (world.pendingLevelUps > 0 && world.choices.length > 0) {
         applyUpgradeFn(world, world.choices[0]);
       }
       stepWorld(world, autopilot(world), SAMPLE);
       fought += SAMPLE;
-      if (world.boss && world.boss.spiralT > 0.35 && fought > 2) break;
+      const b = world.boss;
+      if (b && b.spiralT > 0.35 && fought > 2) {
+        const inFrame = b.x > world.field.width * 0.14 && b.x < world.field.width * 0.86
+          && b.y > world.field.height * 0.14 && b.y < world.field.height * 0.86;
+        const p = world.player;
+        const playerFramed = p.x > world.field.width * 0.05 && p.x < world.field.width * 0.94
+          && p.y > world.field.height * 0.08 && p.y < world.field.height * 0.94;
+        if (inFrame && playerFramed) break;
+      }
     }
     return { screen: world.over ? SCREEN_OVER : SCREEN_PLAY, best: 0, simulated: waited + fought };
+  }
+  if (name === 'over') {
+    // The results screen, earned honestly: the autopilot first plays a
+    // real opening (so the report carries a real score, kills and a
+    // best chain), then a kamikaze pilot takes over, dives at the
+    // nearest horror and never fires, so the swarm collects its due
+    // and the frame shows the wreck moment under the full run report.
+    let elapsed = 0;
+    while (elapsed < 38 && !world.over) {
+      if (world.pendingLevelUps > 0 && world.choices.length > 0) {
+        applyUpgradeFn(world, world.choices[0]);
+      }
+      stepWorld(world, autopilot(world), SAMPLE);
+      elapsed += SAMPLE;
+    }
+    const kamikaze = (w) => {
+      const p = w.player;
+      const input = { mx: 0, my: 0, aimX: p.x, aimY: p.y - 100, fire: false, dash: false };
+      let nearest = null;
+      let nearestDist = Infinity;
+      for (const e of w.enemies) {
+        const d = Math.hypot(e.x - p.x, e.y - p.y);
+        if (d < nearestDist) {
+          nearestDist = d;
+          nearest = e;
+        }
+      }
+      if (nearest) {
+        input.aimX = nearest.x;
+        input.aimY = nearest.y;
+        if (nearestDist > 1) {
+          input.mx = (nearest.x - p.x) / nearestDist;
+          input.my = (nearest.y - p.y) / nearestDist;
+        }
+      }
+      return input;
+    };
+    while (elapsed < 240 && !world.over) {
+      if (world.pendingLevelUps > 0 && world.choices.length > 0) {
+        applyUpgradeFn(world, world.choices[0]);
+      }
+      stepWorld(world, kamikaze(world), SAMPLE);
+      elapsed += SAMPLE;
+    }
+    return { screen: SCREEN_OVER, best: Math.floor(world.score), simulated: elapsed };
   }
   simulate(world, 5);
   return { screen: SCREEN_TITLE, best: 0, simulated: 5 };

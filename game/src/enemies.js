@@ -79,6 +79,10 @@ export function makeBoss(x, y, tier, seconds) {
     spiralT: 0,
     spiralTick: 0,
     spiralAngle: 0,
+    // Nova ring state: novaTimer counts down to the next ring burst and
+    // novaFlash is the renderer's expanding-ring afterglow (1 -> 0).
+    novaTimer: 6.5,
+    novaFlash: 0,
   };
 }
 
@@ -112,6 +116,7 @@ export function pickKind(seconds, rng) {
 export function updateEnemy(enemy, ctx, dt) {
   const fired = [];
   enemy.flash = Math.max(0, enemy.flash - dt * 6);
+  if (enemy.novaFlash) enemy.novaFlash = Math.max(0, enemy.novaFlash - dt * 1.4);
   enemy.bladeCd = Math.max(0, enemy.bladeCd - dt);
   enemy.spawnAge += dt;
   enemy.wobble += dt * 2.2;
@@ -185,6 +190,8 @@ export function updateEnemy(enemy, ctx, dt) {
     enemy.vy = ny * enemy.speed * urge;
   } else if (enemy.kind === 'fuse') {
     updateFuse(enemy, dt, nx, ny, dist);
+  } else if (enemy.kind === 'weaver') {
+    updateWeaver(enemy, ctx, dt, nx, ny, dist, fired);
   } else if (enemy.kind === 'longshot') {
     updateLongshot(enemy, ctx, dt, nx, ny, dist, fired);
   }
@@ -213,6 +220,29 @@ function updateFuse(enemy, dt, nx, ny, dist) {
   enemy.vx = (nx - ny * wob) * enemy.speed * urge;
   enemy.vy = (ny + nx * wob) * enemy.speed * urge;
   if (dist < def.fuseRange) enemy.fuseT = def.fuseTime;
+}
+
+// The Weaver: a gun-ring that strafes in a hard sine weave, always
+// sliding sideways as it closes to its firing ring, then holding the
+// ring and weaving on the spot while it peppers the ship with aimed
+// shots. The weave is phase-locked to its wobble, so it is dodgeable —
+// but leading a target that never flies straight is its own problem.
+function updateWeaver(enemy, ctx, dt, nx, ny, dist, fired) {
+  const def = ENEMIES.weaver;
+  const want = 300;
+  const radial = dist > want + 24 ? 1 : dist < want - 24 ? -0.7 : 0;
+  const weave = Math.sin(enemy.wobble * 2.6) * 1.15;
+  enemy.vx = (nx * radial - ny * weave) * enemy.speed;
+  enemy.vy = (ny * radial + nx * weave) * enemy.speed;
+  enemy.shotTimer -= dt;
+  if (enemy.shotTimer <= 0 && dist < 560) {
+    enemy.shotTimer = def.shotInterval * (0.9 + ctx.rng.next() * 0.2);
+    fired.push({
+      x: enemy.x, y: enemy.y,
+      vx: nx * def.shotSpeed, vy: ny * def.shotSpeed,
+      radius: 6, damage: def.damage, hostile: true,
+    });
+  }
 }
 
 // The Longshot: a sniper that holds a long ring around the player. When
@@ -264,6 +294,7 @@ function updateBoss(boss, ctx, dt, nx, ny, dist, fired) {
   // more often.
   boss.shotTimer -= dt;
   boss.dashTimer -= dt;
+  boss.novaTimer -= dt;
 
   if (boss.spiralT > 0) {
     boss.spiralT -= dt;
@@ -293,6 +324,25 @@ function updateBoss(boss, ctx, dt, nx, ny, dist, fired) {
   if (boss.dashState === 'idle') {
     boss.vx = nx * boss.speed;
     boss.vy = ny * boss.speed;
+    if (boss.novaTimer <= 0) {
+      // The nova ring: a full circle of bolts shed at once. The flash
+      // tells the renderer to paint the expanding shockwave ring, and
+      // the next volley is held back a beat so the ring reads as its
+      // own attack, not as noise inside a burst.
+      boss.novaTimer = BOSS.novaEvery * (0.9 + ctx.rng.next() * 0.2);
+      boss.novaFlash = 1;
+      boss.shotTimer = Math.max(boss.shotTimer, 0.9);
+      const offset = ctx.rng.angle();
+      for (let i = 0; i < BOSS.novaCount; i += 1) {
+        const a = offset + (i / BOSS.novaCount) * TAU;
+        fired.push({
+          x: boss.x + Math.cos(a) * boss.radius * 0.8,
+          y: boss.y + Math.sin(a) * boss.radius * 0.8,
+          vx: Math.cos(a) * BOSS.novaSpeed, vy: Math.sin(a) * BOSS.novaSpeed,
+          radius: 7, damage: 11, hostile: true, nova: true,
+        });
+      }
+    }
     if (boss.dashTimer <= 0 && dist < 480) {
       boss.dashState = 'windup';
       boss.dashTimer = 0.6;

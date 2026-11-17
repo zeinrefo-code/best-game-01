@@ -17,15 +17,21 @@ enemies, the boss, the particle bursts and even the sound effects and music
 - **Full run structure** — title screen with a how-to-play panel, escalating
   survival, level-up offers, a boss every minute, game over with the full
   run report (score, time survived, level, kills, damage dealt, gems,
-  dashes, bosses slain) and instant restart.
-- **Seven enemy kinds** — Mites that chase, Spitters that hold range and
+  dashes, bosses slain, best combo chain) and instant restart.
+- **Eight enemy kinds** — Mites that chase, Spitters that hold range and
   fire, Lancers that telegraph a dash, Mitosis that split in two, Bulwarks
   that soak damage, **Fuses** — spiked mines that sprint in, light a visible
-  fuse and detonate in a chain-reacting blast — and **Longshots**, snipers
+  fuse and detonate in a chain-reacting blast — **Longshots**, snipers
   that hold their distance, paint a dashed red telegraph line while they
-  charge, and fire a single fast bolt — plus the **Void Maw** boss: radial
-  bullet bursts, charges, minion calls, and a rotating **spiral barrage**
-  every third volley.
+  charge, and fire a single fast bolt — and **Weavers**, gun-rings that
+  strafe in a hard sine weave and pepper the ship with aimed shots — plus
+  the **Void Maw** boss: radial bullet bursts, charges, minion calls, a
+  rotating **spiral barrage** every third volley, and a **nova ring** of
+  bolts shed between volleys that the ship must dash through or outrun.
+- **Combo chains** — kills landed in quick succession build a chain;
+  every 8 chained kills raise the score multiplier (up to ×5), shown in
+  the HUD with its draining window. Let the chain lapse and it resets —
+  aggression pays, hesitation costs.
 - **Sixteen upgrades** — fire rate, damage, split shot, speed, magnet,
   shield, piercing, ricochet, nova shockwaves, plating, XP greed, plus
   **Critical Matrix** (chance to double a hit), **Orbital Blades** (spinning
@@ -33,11 +39,12 @@ enemies, the boss, the particle bursts and even the sound effects and music
   and **Nano Repair** (hull regeneration). Level up and pick 1 of 3.
 - **Dash** — SHIFT, SPACE or right-click bursts the ship forward,
   untouchable for the burst, on a short cooldown shown in the HUD.
-- **Real feel** — a layered parallax void with a pulsing grid, floating
-  damage numbers (crits in big gold), hit-flash pops, dash streaks, screen
-  shake, explosions, muzzle flash, shield rings, synth SFX and a procedural
-  bass-and-arp music loop (M mutes).
-- **Deterministic scenes** — `?shot=title|play|upgrade|boss&seed=N` replays a
+- **Real feel** — a layered parallax void with drifting aurora veils,
+  shooting stars and a pulsing grid, floating damage numbers (crits in
+  big gold), hit-flash pops, dash streaks, screen shake, explosions,
+  muzzle flash, shield rings, synth SFX and a procedural bass-and-arp
+  music loop (M mutes).
+- **Deterministic scenes** — `?shot=title|play|boss|over&seed=N` replays a
   seeded run with an autopilot, so the four screenshots are reproducible.
 
 ## Controls

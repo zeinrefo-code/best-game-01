@@ -142,6 +142,12 @@ export function createAudio() {
     levelUp() {
       [523.25, 659.25, 783.99, 1046.5].forEach((f, i) => tone(f, 0.16, 'triangle', 0.2, null, i * 0.07));
     },
+    comboUp(mult) {
+      // A rising blip that climbs with the multiplier it celebrates.
+      const base = 440 + mult * 110;
+      tone(base, 0.1, 'triangle', 0.18, base * 1.5);
+      tone(base * 1.5, 0.12, 'triangle', 0.14, base * 2, 0.05);
+    },
     bossAlarm() {
       tone(98, 0.5, 'sawtooth', 0.25, 196);
       tone(98, 0.5, 'sawtooth', 0.25, 196, 0.55);

@@ -3,10 +3,10 @@
 // paints what is there. The game moves between five screens: title, play,
 // level-up, paused and game over.
 //
-// ?seed=N fixes the spawn pattern. ?shot=title|play|upgrade|boss (with
-// &seed=N) stages that scene instead of running the loop, paints it twice
-// and sets window.__shotReady for a screenshot. ?soak=1 plays with the
-// autopilot and reports window.__soakResult when the run ends.
+// ?seed=N fixes the spawn pattern. ?shot=title|play|upgrade|boss|over
+// (with &seed=N) stages that scene instead of running the loop, paints
+// it twice and sets window.__shotReady for a screenshot. ?soak=1 plays
+// with the autopilot and reports window.__soakResult when the run ends.
 import { BEST_KEY, STEP } from './config.js';
 import { createRandom } from './random.js';
 import { applyUpgrade, createWorld, resetWorld, stepWorld } from './world.js';
@@ -151,6 +151,14 @@ function handleEvents() {
       particles.floatText(world.player.x, world.player.y - 30, event.name, '#ffd166');
     } else if (event.type === 'nova') {
       particles.ring(event.x, event.y, '#4df3ff', event.radius);
+      audio.explode(false);
+    } else if (event.type === 'comboUp') {
+      // The chain just paid a higher rate: shout it over the ship.
+      particles.floatText(event.x, event.y - 46, `COMBO ×${event.mult}`, '#ffd166', 1.7);
+      particles.ring(event.x, event.y, '#ffd166', 54);
+      audio.comboUp(event.mult);
+    } else if (event.type === 'bossNova') {
+      particles.addShake(0.3);
       audio.explode(false);
     } else if (event.type === 'surge') {
       banner = { text: `⚠ SURGE ${event.n} — THE SWARM THICKENS`, alpha: 1, age: 0 };
